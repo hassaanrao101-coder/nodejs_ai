@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
@@ -15,7 +14,7 @@ const openai = new OpenAI({
 
 // Multer: in-memory upload, 10MB max, image only
 const upload = multer({
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 30 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
@@ -25,15 +24,13 @@ const upload = multer({
   }
 });
 
-// POST /analyze — receives image, prepares for OpenAI, returns DUMMY response
 app.post('/create-image', upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No image provided' });
   }
 
-  const {body}= req
-  const prompt= body.prompt
-
+  const body= req.body
+  console.log("body", body)
   // Convert to base64 data URL (required by GPT-4 Vision)
   const base64Image = req.file.buffer.toString('base64');
   const mimeType = req.file.mimetype;
@@ -68,7 +65,6 @@ app.post('/create-image', upload.single('image'), async (req, res) => {
   return res.json(dummyResponse);
 });
 
-// Error handler for upload issues
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     return res.status(400).json({ error: 'Upload failed', message: error.message });
