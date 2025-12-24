@@ -2,8 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const { OpenAI } = require('openai');
-
+const cors= require("cors")
 const app = express();
+
+
+app.use(cors({
+  origin:["http://localhost:5173", "http://localhost:3000"]
+}))
+
 const PORT = process.env.PORT || 3000;
 
 // Initialize OpenAI client (uses OPENAI_API_KEY from env automatically)
