@@ -31,6 +31,9 @@ const upload = multer({
 });
 
 app.post('/create-image', upload.single('image'), async (req, res) => {
+  const query= req.query
+  console.log("params",query);
+  
   if (!req.file) {
     return res.status(400).json({ error: 'No image provided' });
   }
