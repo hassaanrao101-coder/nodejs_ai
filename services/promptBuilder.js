@@ -241,6 +241,35 @@ class PromptBuilder {
         errors.push('Invalid brighten value. Must be: subtle, natural, or strong');
       }
     }
+
+     if (queryParams.correct_crowding_with_alignment) {
+      const validLevels = ['mild' , 'moderate' , 'severe' ];
+      if (!validLevels.includes(queryParams.correct_crowding_with_alignment.toLowerCase())) {
+        errors.push('Invalid crowding with alignment value. Must be: mild, moderate or severe ');
+      }
+    }
+        
+    // Validate all boolean parameters
+    const booleanParams = [
+      'widen_upper_teeth',
+      'widen_lower_teeth',
+      'close_spaces_evenly',
+      'replace_missing_teeth',
+      'reduce_gummy_smile',
+      'improve_shape_of_incisal_edges',
+      'improve_gum_recession',
+      'correct_underbite',
+      'correct_overbite'
+    ];
+    
+    booleanParams.forEach(param => {
+      if (queryParams[param] !== undefined) {
+        const value = queryParams[param].toLowerCase();
+        if (value !== 'true' && value !== 'false') {
+          errors.push(`Invalid ${param} value. Must be: true or false`);
+        }
+      }
+    });
     
     return {
       isValid: errors.length === 0,
