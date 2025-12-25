@@ -7,15 +7,30 @@ const app = express();
 
 const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
 
-const corsOptions= {
+const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (like Postman, mobile apps, curl)
+    // OR requests from allowed origins
+    if (!origin) {
+      // Option A: Block requests without origin (stricter)
+      // callback(new Error('Not allowed by CORS'));
+      
+      // Option B: Allow requests without origin (current behavior)
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      const error = new Error('Not allowed by CORS');
+      error.status=403 // forbidden
+      callback(error)
     }
-  }
-}
+  },
+  credentials: true // if you need cookies/auth headers
+};
+
+app.use(cors(corsOptions));
 
 app.use(cors(corsOptions))
 
@@ -39,56 +54,65 @@ const upload = multer({
   }
 });
 
-app.post('/create-image',  upload.single('image'), async (req, res) => {
-  const query= req.query
-  console.log("params",query);
+// 1. Wrap async route handlers to catch errors
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// 2. Apply wrapper to your route
+app.post('/create-image', upload.single('image'), asyncHandler(async (req, res) => {
+  const query = req.query;
+  console.log("params", query);
+
   if (!req.file) {
     return res.status(400).json({ error: 'No image provided' });
   }
 
-  const body= req.body
-  console.log("body", body)
-  // Convert to base64 data URL (required by GPT-4 Vision)
+  const body = req.body;
+  console.log("body", body);
+
+  // Convert to base64 data URL
   const base64Image = req.file.buffer.toString('base64');
   const mimeType = req.file.mimetype;
   const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-  // ✅ OpenAI client is ready — but we skip real call for now
-  // 🔜 Later, uncomment this to make real API call:
-  /*
-  const chatCompletion = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Describe this image in detail.' },
-          { type: 'image_url', image_url: { url: dataUrl } }
-        ]
-      }
-    ]
-  });
-  const description = chatCompletion.choices[0].message.content;
-  */
+  //here ai will be called for image generation
 
-  // 💡 For now: return DUMMY response (as requested)
   const dummyResponse = {
     success: true,
-    // This mimics a DALL·E style image URL (even though Vision returns text)
     generatedImageUrl: "https://via.placeholder.com/512?text=Dummy+AI+Image",
     description: "[DUMMY] A realistic photo of a cat wearing sunglasses, sitting on a beach."
   };
 
   return res.json(dummyResponse);
-});
+}));
 
+// 3. Fixed error handler
 app.use((error, req, res, next) => {
+  // Handle Multer-specific errors
   if (error instanceof multer.MulterError) {
-    return res.status(400).json({ error: 'Upload failed', message: error.message });
+    console.error('Multer error:', error);
+    return res.status(400).json({ 
+      error: 'Upload failed', 
+      message: error.message 
+    });
   }
-  console.log(error);
-  
-  res.status(400).json({ error: error.message });
+
+  // Handle file filter errors
+  if (error.message === 'Only image files are allowed') {
+    console.error('File type error:', error);
+    return res.status(400).json({ 
+      error: 'Invalid file type', 
+      message: error.message 
+    });
+  }
+
+  // Handle all other errors
+  console.error('Server error:', error);
+  return res.status(500).json({ 
+    error: 'Internal server error', 
+    message:  error.message
+  });
 });
 
 // Start server
