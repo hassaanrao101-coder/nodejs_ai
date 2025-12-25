@@ -101,10 +101,10 @@ class ImageController {
       
       // For now, we'll use the vision model's description
       // In production, you might integrate with other image processing APIs
-
+https://images.pexels.com/photos/20620210/pexels-photo-20620210.jpeg
       return {
         description: description,
-        imageUrl: "https://via.placeholder.com/512?text=Generated+Dental+Image",
+        imageUrl: "https://images.pexels.com/photos/20620210/pexels-photo-20620210.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=627&w=1200",
         // In real implementation, this would be the actual generated image URL
       };
 
