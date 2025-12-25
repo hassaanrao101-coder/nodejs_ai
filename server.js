@@ -1,135 +1,140 @@
 require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
-const { OpenAI } = require('openai');
-const cors = require("cors")
+const cors = require("cors");
+const imageController = require('./controllers/imageController');
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
+// CORS Configuration
 const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
-
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like Postman, mobile apps, curl)
-    // OR requests from allowed origins
     if (!origin) {
-      // Option A: Block requests without origin (stricter)
-      // callback(new Error('Not allowed by CORS'));
-
-      // Option B: Allow requests without origin (current behavior)
       return callback(null, true);
     }
-
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       const error = new Error('Not allowed by CORS');
-      error.status = 403 // forbidden
-      callback(error)
+      error.status = 403;
+      callback(error);
     }
   },
-  credentials: true // if you need cookies/auth headers
+  credentials: true
 };
 
 app.use(cors(corsOptions));
 
-app.use(cors(corsOptions))
-
-const PORT = process.env.PORT || 3000;
-
-// Initialize OpenAI client (uses OPENAI_API_KEY from env automatically)
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  // baseURL: process.env.OPENAI_API_URL, // optional, default is fine
-});
-
-// Multer: in-memory upload, 10MB max, image only
+// Multer Configuration
 const upload = multer({
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      const error = new Error('Only image files are allowed');
+      error.status = 400;
+      cb(error);
     }
   }
 });
 
-// 1. Wrap async route handlers to catch errors
+// Async handler wrapper
 const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
-// 2. Apply wrapper to your route
-app.post('/create-image', upload.single('image'), asyncHandler(async (req, res) => {
-  const query = req.query;
-  console.log("params", query);
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    openaiConfigured: !!process.env.OPENAI_API_KEY
+  });
+});
 
-  if (!req.file) {
-    return res.status(400).json({ error: 'No image provided' });
-  }
+// Main route - Dental Image Creation
+app.post(
+  '/create-image', 
+  upload.single('image'), 
+  asyncHandler((req, res, next) => imageController.createImage(req, res, next))
+);
 
-  const body = req.body;
-  console.log("body", body);
-
-  // Convert to base64 data URL
-  const base64Image = req.file.buffer.toString('base64');
-  const mimeType = req.file.mimetype;
-  const dataUrl = `data:${mimeType};base64,${base64Image}`;
-
-  //here ai will be called for image generation
-
-  const dummyResponse = {
-    success: true,
-    generatedImageUrl: "https://via.placeholder.com/512?text=Dummy+AI+Image",
-    description: "[DUMMY] A realistic photo of a cat wearing sunglasses, sitting on a beach."
-  };
-
-  return res.json(dummyResponse);
-}));
-
-// 3. Fixed error handler
+// Error Handler Middleware
 app.use((error, req, res, next) => {
-  //cors policy errors
+  console.error('Error:', error);
 
+  // CORS errors
   if (error.message === 'Not allowed by CORS') {
-    console.error('Cors error:', error.message)
-    return res.status(403).json({
-      error: 'CORS policy violation',
+    return res.status(403).json({ 
+      success: false,
+      error: 'CORS policy violation', 
       message: 'Origin not allowed',
-      allowedOrigins: allowedOrigins
-    })
+      code: 'CORS_ERROR'
+    });
   }
 
-
-
-  // Handle Multer-specific errors
+  // Multer errors
   if (error instanceof multer.MulterError) {
-    console.error('Multer error:', error);
-    return res.status(400).json({
-      error: 'Upload failed',
-      message: error.message
+    const multerErrors = {
+      'LIMIT_FILE_SIZE': 'File size exceeds 30MB limit',
+      'LIMIT_FILE_COUNT': 'Too many files uploaded',
+      'LIMIT_UNEXPECTED_FILE': 'Unexpected file field'
+    };
+    
+    return res.status(400).json({ 
+      success: false,
+      error: 'Upload failed', 
+      message: multerErrors[error.code] || error.message,
+      code: error.code
     });
   }
 
-  // Handle file filter errors
+  // File filter errors
   if (error.message === 'Only image files are allowed') {
-    console.error('File type error:', error);
-    return res.status(400).json({
-      error: 'Invalid file type',
-      message: error.message
+    return res.status(400).json({ 
+      success: false,
+      error: 'Invalid file type', 
+      message: 'Only image files (JPEG, PNG, GIF, WebP) are allowed',
+      code: 'INVALID_FILE_TYPE'
     });
   }
 
-  // Handle all other errors
-  console.error('Server error:', error);
-  return res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === "development" ? error.message : "Something went wrong"
+  // OpenAI API errors (from imageController)
+  if (error.code) {
+    return res.status(error.status || 500).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    });
+  }
+
+  // Generic errors
+  return res.status(error.status || 500).json({ 
+    success: false,
+    error: 'Internal server error', 
+    message: error.message,
+    code: 'INTERNAL_ERROR',
+    ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+  });
+});
+
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Route not found',
+    message: `Cannot ${req.method} ${req.path}`,
+    code: 'NOT_FOUND'
   });
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
-  console.log(`🔑 OpenAI client initialized (key loaded: ${!!process.env.OPENAI_API_KEY})`);
+  console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured ✓' : 'Missing ✗'}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
