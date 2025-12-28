@@ -92,6 +92,7 @@ describe("POST /create-image", () => {
         .field("widen_upper_teeth", "true");
 
       // Should return 400 or appropriate error status
+      console.log("error response",response.body);
       expect([400, 422, 500]).toContain(response.statusCode);
     });
   });
